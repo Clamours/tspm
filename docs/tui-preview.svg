@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1131" height="320" viewBox="0 0 1131 320" role="img" aria-label="tspm TUI preview">
+  <defs>
+    <clipPath id="window-clip">
+      <rect x="0" y="0" width="1131" height="320" rx="10" ry="10"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#window-clip)">
+    <rect x="0" y="0" width="1131" height="320" fill="#0d1117"/>
+    <rect x="0" y="0" width="1131" height="34" fill="#161b22"/>
+    <line x1="0" y1="34" x2="1131" y2="34" stroke="#30363d" stroke-width="1"/>
+    <circle cx="20" cy="17" r="6" fill="#ff5f56"/>
+    <circle cx="40" cy="17" r="6" fill="#ffbd2e"/>
+    <circle cx="60" cy="17" r="6" fill="#27c93f"/>
+    <text x="565.5" y="21.5" text-anchor="middle" fill="#8b949e" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="500">tspm — Task Spooler Multi-Queue Manager</text>
+    <text x="25.6" y="60.5" fill="#79c0ff" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="700" xml:space="preserve">TSP</text>
+    <text x="55.8" y="60.5" fill="#79c0ff" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="700" xml:space="preserve">MANAGER</text>
+    <text x="123.7" y="60.5" fill="#79c0ff" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="700" xml:space="preserve">v0.1.0</text>
+    <text x="191.7" y="60.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">selected:</text>
+    <text x="267.1" y="60.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">/tmp/tsp-gpu0.sock</text>
+    <line x1="18" y1="76.0" x2="1113" y2="76.0" stroke="#30363d" stroke-width="1"/>
+    <text x="25.6" y="100.5" fill="#e3b341" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="700" xml:space="preserve">QUEUES</text>
+    <line x1="165.2" y1="84.0" x2="165.2" y2="105.0" stroke="#30363d" stroke-width="1"/>
+    <text x="184.1" y="100.5" fill="#e3b341" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="700" xml:space="preserve">TASKS</text>
+    <text x="18.0" y="120.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">&gt;</text>
+    <text x="33.1" y="120.5" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">●</text>
+    <text x="48.2" y="120.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">gpu0</text>
+    <text x="93.5" y="120.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">1/1</text>
+    <line x1="165.2" y1="104.0" x2="165.2" y2="125.0" stroke="#30363d" stroke-width="1"/>
+    <text x="191.7" y="120.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">ID</text>
+    <text x="229.4" y="120.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">STATE</text>
+    <text x="304.9" y="120.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">EXIT</text>
+    <text x="350.2" y="120.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">TIME</text>
+    <text x="433.2" y="120.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">OUTPUT</text>
+    <text x="576.7" y="120.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">COMMAND</text>
+    <text x="33.1" y="140.5" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">●</text>
+    <text x="48.2" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">gpu1</text>
+    <text x="93.5" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">1/2</text>
+    <line x1="165.2" y1="124.0" x2="165.2" y2="145.0" stroke="#30363d" stroke-width="1"/>
+    <text x="191.7" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">0</text>
+    <text x="229.4" y="140.5" fill="#56d4dd" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">finished</text>
+    <text x="304.9" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">0</text>
+    <text x="350.2" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">41m11s</text>
+    <text x="433.2" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">/tmp/ts-out.9aK2eL</text>
+    <text x="576.7" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">python</text>
+    <text x="629.5" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">train.py</text>
+    <text x="697.5" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">--cfg</text>
+    <text x="742.8" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">configs/sft_7b.yaml</text>
+    <text x="893.8" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">--epochs</text>
+    <text x="961.8" y="140.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">3</text>
+    <rect x="172.8" y="145.0" width="940.2" height="20.0" rx="3" fill="#1f6feb" fill-opacity="0.16"/>
+    <text x="33.1" y="160.5" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">●</text>
+    <text x="48.2" y="160.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">cpu-eval</text>
+    <text x="123.7" y="160.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">0/4</text>
+    <line x1="165.2" y1="144.0" x2="165.2" y2="165.0" stroke="#30363d" stroke-width="1"/>
+    <text x="176.5" y="160.5" fill="#79c0ff" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="700" xml:space="preserve">&gt;</text>
+    <text x="191.7" y="160.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">1</text>
+    <text x="229.4" y="160.5" fill="#56d364" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="700" xml:space="preserve">running</text>
+    <text x="433.2" y="160.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">/tmp/ts-out.4fM8pQ</text>
+    <text x="576.7" y="160.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">python</text>
+    <text x="629.5" y="160.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">eval.py</text>
+    <text x="689.9" y="160.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">--ckpt</text>
+    <text x="742.8" y="160.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">ckpts/step_2000</text>
+    <text x="863.6" y="160.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">--bench</text>
+    <text x="924.0" y="160.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">mmlu</text>
+    <text x="33.1" y="180.5" fill="#f85149" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">!</text>
+    <text x="48.2" y="180.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">archive</text>
+    <text x="116.1" y="180.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">0/?</text>
+    <line x1="165.2" y1="164.0" x2="165.2" y2="185.0" stroke="#30363d" stroke-width="1"/>
+    <text x="191.7" y="180.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">2</text>
+    <text x="229.4" y="180.5" fill="#d29922" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">queued</text>
+    <text x="433.2" y="180.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">-</text>
+    <text x="576.7" y="180.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">python</text>
+    <text x="629.5" y="180.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">eval.py</text>
+    <text x="689.9" y="180.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">--ckpt</text>
+    <text x="742.8" y="180.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">ckpts/step_2000</text>
+    <text x="863.6" y="180.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">--bench</text>
+    <text x="924.0" y="180.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">gsm8k</text>
+    <line x1="165.2" y1="184.0" x2="165.2" y2="205.0" stroke="#30363d" stroke-width="1"/>
+    <text x="191.7" y="200.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">3</text>
+    <text x="229.4" y="200.5" fill="#d29922" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">queued</text>
+    <text x="433.2" y="200.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">-</text>
+    <text x="576.7" y="200.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">python</text>
+    <text x="629.5" y="200.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">export_gguf.py</text>
+    <text x="742.8" y="200.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">--ckpt</text>
+    <text x="795.6" y="200.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">ckpts/step_2000</text>
+    <text x="916.4" y="200.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">--quant</text>
+    <text x="976.9" y="200.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">q4_k_m</text>
+    <line x1="165.2" y1="204.0" x2="165.2" y2="225.0" stroke="#30363d" stroke-width="1"/>
+    <text x="191.7" y="220.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">4</text>
+    <text x="229.4" y="220.5" fill="#ff7b72" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="700" xml:space="preserve">failed</text>
+    <text x="304.9" y="220.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">1</text>
+    <text x="350.2" y="220.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">2m4s</text>
+    <text x="433.2" y="220.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">/tmp/ts-out.7cP1xR</text>
+    <text x="576.7" y="220.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">python</text>
+    <text x="629.5" y="220.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">train.py</text>
+    <text x="697.5" y="220.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">--cfg</text>
+    <text x="742.8" y="220.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">configs/ablation_lr.yaml</text>
+    <text x="931.5" y="220.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">--lr</text>
+    <text x="969.3" y="220.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">1e-2</text>
+    <line x1="165.2" y1="224.0" x2="165.2" y2="245.0" stroke="#30363d" stroke-width="1"/>
+    <text x="191.7" y="240.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">5</text>
+    <text x="229.4" y="240.5" fill="#56d4dd" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">finished</text>
+    <text x="304.9" y="240.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">0</text>
+    <text x="350.2" y="240.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">14s</text>
+    <text x="433.2" y="240.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">/tmp/ts-out.2bN6vW</text>
+    <text x="576.7" y="240.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">bash</text>
+    <text x="614.4" y="240.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">scripts/prepare_dataset.sh</text>
+    <text x="818.3" y="240.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">--split</text>
+    <text x="878.7" y="240.5" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">val</text>
+    <line x1="165.2" y1="244.0" x2="165.2" y2="265.0" stroke="#30363d" stroke-width="1"/>
+    <line x1="18" y1="276.0" x2="1113" y2="276.0" stroke="#30363d" stroke-width="1"/>
+    <text x="25.6" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Tab/←→</text>
+    <text x="78.4" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Pane</text>
+    <text x="123.7" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">↑↓</text>
+    <text x="146.3" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Move</text>
+    <text x="191.7" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Enter/i</text>
+    <text x="252.0" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Details</text>
+    <text x="320.0" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">l</text>
+    <text x="335.1" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Logs</text>
+    <text x="380.4" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">a</text>
+    <text x="395.5" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Submit</text>
+    <text x="455.9" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">n</text>
+    <text x="471.0" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Add</text>
+    <text x="508.8" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">d</text>
+    <text x="523.8" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">DelQ</text>
+    <text x="569.1" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">k</text>
+    <text x="584.2" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Kill</text>
+    <text x="629.5" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">r</text>
+    <text x="644.6" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Remove</text>
+    <text x="705.0" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">C</text>
+    <text x="720.1" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Clear</text>
+    <text x="773.0" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">u</text>
+    <text x="788.1" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Urgent</text>
+    <text x="848.5" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">s</text>
+    <text x="863.6" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Slots</text>
+    <text x="916.4" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">R</text>
+    <text x="931.5" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Refresh</text>
+    <text x="999.5" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">?</text>
+    <text x="1014.6" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Help</text>
+    <text x="1059.9" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">q</text>
+    <text x="1075.0" y="300.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="12.5" xml:space="preserve">Quit</text>
+  </g>
+  <rect x="0.5" y="0.5" width="1130" height="319" rx="10" ry="10" fill="none" stroke="#30363d" stroke-width="1"/>
+</svg>

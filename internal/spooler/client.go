@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tspm-project/tsp-manager/internal/model"
+	"github.com/Clamours/tspm/internal/model"
 )
 
 type Client struct {

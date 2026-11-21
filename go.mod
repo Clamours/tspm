@@ -1,4 +1,4 @@
-module github.com/tspm-project/tsp-manager
+module github.com/Clamours/tspm
 
 go 1.24.0
 

@@ -12,10 +12,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
-	"github.com/tspm-project/tsp-manager/internal/manager"
-	"github.com/tspm-project/tsp-manager/internal/model"
-	"github.com/tspm-project/tsp-manager/internal/spooler"
-	"github.com/tspm-project/tsp-manager/internal/terminal"
+	"github.com/Clamours/tspm/internal/manager"
+	"github.com/Clamours/tspm/internal/model"
+	"github.com/Clamours/tspm/internal/spooler"
+	"github.com/Clamours/tspm/internal/terminal"
 )
 
 type asyncResult struct {

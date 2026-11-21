@@ -14,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tspm-project/tsp-manager/internal/config"
-	"github.com/tspm-project/tsp-manager/internal/manager"
-	"github.com/tspm-project/tsp-manager/internal/model"
-	"github.com/tspm-project/tsp-manager/internal/ui"
+	"github.com/Clamours/tspm/internal/config"
+	"github.com/Clamours/tspm/internal/manager"
+	"github.com/Clamours/tspm/internal/model"
+	"github.com/Clamours/tspm/internal/ui"
 )
 
 var version = "0.1.0"

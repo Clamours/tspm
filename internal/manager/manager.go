@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tspm-project/tsp-manager/internal/config"
-	"github.com/tspm-project/tsp-manager/internal/discovery"
-	"github.com/tspm-project/tsp-manager/internal/model"
-	"github.com/tspm-project/tsp-manager/internal/spooler"
+	"github.com/Clamours/tspm/internal/config"
+	"github.com/Clamours/tspm/internal/discovery"
+	"github.com/Clamours/tspm/internal/model"
+	"github.com/Clamours/tspm/internal/spooler"
 )
 
 type Manager struct {

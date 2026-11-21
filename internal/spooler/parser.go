@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/tspm-project/tsp-manager/internal/model"
+	"github.com/Clamours/tspm/internal/model"
 )
 
 var timePattern = regexp.MustCompile(`^(?:\?|\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?){0,2})$`)

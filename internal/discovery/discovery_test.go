@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tspm-project/tsp-manager/internal/model"
+	"github.com/Clamours/tspm/internal/model"
 )
 
 func TestKnownSocketName(t *testing.T) {

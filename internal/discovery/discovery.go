@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tspm-project/tsp-manager/internal/config"
-	"github.com/tspm-project/tsp-manager/internal/model"
+	"github.com/Clamours/tspm/internal/config"
+	"github.com/Clamours/tspm/internal/model"
 )
 
 var knownSocketName = regexp.MustCompile(`(?i)(socket-ts|(^|[/_-])tsp?([._/-]|$)|task.?spooler)`)
