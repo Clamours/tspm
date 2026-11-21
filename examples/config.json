@@ -1,0 +1,15 @@
+{
+  "tsp_bin": "tsp",
+  "refresh_interval_seconds": 2,
+  "auto_discover": true,
+  "queues": [
+    {
+      "name": "gpu0",
+      "socket": "/tmp/tsp-gpu0.sock"
+    },
+    {
+      "name": "gpu1",
+      "socket": "/tmp/tsp-gpu1.sock"
+    }
+  ]
+}
