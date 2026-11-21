@@ -36,7 +36,7 @@ func (q Queue) RunningCount() int {
 func (q Queue) PendingCount() int {
 	n := 0
 	for _, t := range q.Tasks {
-		if t.State == "queued" || t.State == "waiting" {
+		if t.State == "queued" || t.State == "waiting" || t.State == "allocating" {
 			n++
 		}
 	}
@@ -46,7 +46,7 @@ func (q Queue) PendingCount() int {
 func (q Queue) FinishedCount() int {
 	n := 0
 	for _, t := range q.Tasks {
-		if t.State == "finished" || t.State == "done" {
+		if t.State == "finished" || t.State == "done" || t.State == "skipped" {
 			n++
 		}
 	}

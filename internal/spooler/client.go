@@ -1,6 +1,7 @@
 package spooler
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -121,11 +122,15 @@ func (c Client) OutputPath(ctx context.Context, id int) (string, error) {
 	return path, nil
 }
 
-// Output returns the full stored output of a job via the daemon protocol
-// (tsp -c). This works even when the reported output path is not a regular
-// file on this machine (e.g. a stale unix socket).
+// Output returns the stored output of a job via the daemon protocol (tsp -c).
+// For a running task, tsp -c streams until completion and may hit the context
+// deadline; in that case any output already captured before timeout is returned.
 func (c Client) Output(ctx context.Context, id int) (string, error) {
-	return c.run(ctx, "-c", strconv.Itoa(id))
+	out, err := c.run(ctx, "-c", strconv.Itoa(id))
+	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) && out != "" {
+		return out, nil
+	}
+	return out, err
 }
 
 func (c Client) SubmitShell(ctx context.Context, command string) (int, error) {
@@ -140,9 +145,12 @@ func (c Client) SubmitArgs(ctx context.Context, args []string) (int, error) {
 	if len(args) == 0 {
 		return -1, errors.New("no command supplied")
 	}
-	// A single argument is treated as a shell command string, so callers can
-	// explicitly pass pipelines/redirections as: -- "cmd | tee output.log".
+	// A single argument is treated as a shell command string (e.g. -- "cmd | tee output.log"),
+	// unless it directly references an existing executable/file path on disk (which may contain spaces).
 	if len(args) == 1 {
+		if st, err := os.Stat(args[0]); err == nil && !st.IsDir() {
+			return c.SubmitShell(ctx, shellQuote(args[0]))
+		}
 		return c.SubmitShell(ctx, args[0])
 	}
 	// Multiple arguments are individually quoted and executed as one command.
@@ -169,6 +177,38 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
+// NormalizeOutputLines splits raw log output into lines, collapses carriage-return
+// progress updates, drops a single trailing newline, and limits to maxLines.
+func NormalizeOutputLines(raw string, dropLeadingPartial bool, maxLines int64) []string {
+	text := strings.ReplaceAll(raw, "\r\n", "\n")
+	lines := strings.Split(text, "\n")
+	if dropLeadingPartial && len(lines) > 1 {
+		lines = lines[1:]
+	}
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if maxLines > 0 && int64(len(lines)) > maxLines {
+		lines = lines[len(lines)-int(maxLines):]
+	}
+	for i, line := range lines {
+		if strings.ContainsRune(line, '\r') {
+			lines[i] = resolveCarriageReturn(line)
+		}
+	}
+	return lines
+}
+
+func resolveCarriageReturn(line string) string {
+	parts := strings.Split(line, "\r")
+	for i := len(parts) - 1; i >= 0; i-- {
+		if parts[i] != "" {
+			return parts[i]
+		}
+	}
+	return ""
+}
+
 func ReadTail(path string, maxLines, maxBytes int64) ([]string, error) {
 	if maxLines < 1 {
 		maxLines = 30
@@ -185,6 +225,34 @@ func ReadTail(path string, maxLines, maxBytes int64) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if st.Size() == 0 {
+		return nil, nil
+	}
+
+	// Detect gzip-compressed output files created with `tsp -g`.
+	var magic [2]byte
+	n, _ := f.ReadAt(magic[:], 0)
+	if n == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			return nil, err
+		}
+		defer gz.Close()
+		const maxDecompress = 8 * 1024 * 1024
+		data, err := io.ReadAll(io.LimitReader(gz, maxDecompress))
+		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, err
+		}
+		if int64(len(data)) > maxBytes {
+			data = data[len(data)-int(maxBytes):]
+			return NormalizeOutputLines(string(data), true, maxLines), nil
+		}
+		return NormalizeOutputLines(string(data), false, maxLines), nil
+	}
+
 	start := st.Size() - maxBytes
 	if start < 0 {
 		start = 0
@@ -192,16 +260,9 @@ func ReadTail(path string, maxLines, maxBytes int64) ([]string, error) {
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
 		return nil, err
 	}
-	data, err := io.ReadAll(f)
+	data, err := io.ReadAll(io.LimitReader(f, maxBytes))
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
-	if start > 0 && len(lines) > 0 {
-		lines = lines[1:]
-	}
-	if int64(len(lines)) > maxLines {
-		lines = lines[len(lines)-int(maxLines):]
-	}
-	return lines, nil
+	return NormalizeOutputLines(string(data), start > 0, maxLines), nil
 }

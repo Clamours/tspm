@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-runewidth"
 	"github.com/tspm-project/tsp-manager/internal/manager"
 	"github.com/tspm-project/tsp-manager/internal/model"
 	"github.com/tspm-project/tsp-manager/internal/spooler"
@@ -18,11 +19,14 @@ import (
 )
 
 type asyncResult struct {
-	message string
-	err     error
-	kind    string
-	lines   []string
-	path    string
+	message         string
+	err             error
+	kind            string
+	lines           []string
+	path            string
+	reqID           uint64
+	skipped         bool
+	fetchedFallback bool
 }
 
 type uiTickMsg struct{}
@@ -30,36 +34,48 @@ type refreshTickMsg struct{}
 
 type UI struct {
 	manager *manager.Manager
+	version string
 
-	queues        []model.Queue
-	selectedQueue int
-	selectedTask  int
-	selectedID    int
-	queueOffset   int
-	taskOffset    int
-	focus         int // 0 queues, 1 tasks
+	queues         []model.Queue
+	selectedQueue  int
+	selectedSocket string
+	selectedTask   int
+	selectedID     int
+	queueOffset    int
+	taskOffset     int
+	focus          int // 0 queues, 1 tasks
 
-	modal       string
-	promptLabel string
-	promptValue string
-	promptKind  string
-	promptStage int
-	firstValue  string
-	confirmText string
-	confirmKind string
+	modal             string
+	promptLabel       string
+	promptValue       string
+	promptKind        string
+	promptStage       int
+	firstValue        string
+	confirmText       string
+	confirmKind       string
+	targetQueueName   string
+	targetQueueSocket string
+	targetTaskID      int
 
-	logMode    bool
-	logPath    string
-	logQueue   string
-	logLines   []string
-	logTask    int
-	logOffset  int
-	logFetchAt time.Time
+	logMode        bool
+	logPath        string
+	logQueueSocket string
+	logLines       []string
+	logTask        int
+	logOffset      int
+	logFetchAt     time.Time
+	logFetching    bool
+	logReqID       uint64
+
 	infoMode   bool
 	infoLines  []string
 	infoOffset int
+	infoReqID  uint64
 
-	busy       bool
+	helpMode   bool
+	helpOffset int
+
+	activeOps  int
 	message    string
 	messageAt  time.Time
 	refreshing bool
@@ -67,9 +83,18 @@ type UI struct {
 	height     int
 }
 
-func New(m *manager.Manager) *UI {
+func New(m *manager.Manager, version string) *UI {
 	sz := terminal.GetSize()
-	return &UI{manager: m, selectedID: -1, width: sz.Width, height: sz.Height}
+	if strings.TrimSpace(version) == "" {
+		version = "0.1.0"
+	}
+	return &UI{
+		manager:    m,
+		version:    version,
+		selectedID: -1,
+		width:      sz.Width,
+		height:     sz.Height,
+	}
 }
 
 func (u *UI) Run(ctx context.Context) error {
@@ -82,6 +107,7 @@ func (u *UI) Run(ctx context.Context) error {
 }
 
 func (u *UI) Init() tea.Cmd {
+	u.refreshing = true
 	return tea.Batch(u.refreshCmd(), uiTickCmd(), u.refreshTickCmd())
 }
 
@@ -91,6 +117,9 @@ func uiTickCmd() tea.Cmd {
 
 func (u *UI) refreshTickCmd() tea.Cmd {
 	interval := time.Duration(u.manager.Config().RefreshIntervalSeconds) * time.Second
+	if interval < time.Second {
+		interval = 2 * time.Second
+	}
 	return tea.Tick(interval, func(time.Time) tea.Msg { return refreshTickMsg{} })
 }
 
@@ -102,6 +131,44 @@ func (u *UI) refreshCmd() tea.Cmd {
 	}
 }
 
+func (u *UI) fetchLogCmd(reqID uint64, logPath, queueSocket string, taskID int, lastFallbackAt time.Time) tea.Cmd {
+	return func() tea.Msg {
+		if logPath == "" {
+			return asyncResult{kind: "logdata", reqID: reqID, skipped: true}
+		}
+		var lines []string
+		var err error
+		fetchedFallback := false
+		if st, serr := os.Stat(logPath); serr == nil && st.Mode().IsRegular() {
+			lines, err = spooler.ReadTail(logPath, 500, 256*1024)
+		} else {
+			if !lastFallbackAt.IsZero() && time.Since(lastFallbackAt) < time.Second {
+				return asyncResult{kind: "logdata", reqID: reqID, skipped: true}
+			}
+			fetchedFallback = true
+			c, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			out, oerr := u.manager.TaskOutput(c, queueSocket, taskID)
+			cancel()
+			err = oerr
+			if err == nil {
+				lines = spooler.NormalizeOutputLines(out, false, 500)
+			}
+		}
+		if err == nil {
+			for i := range lines {
+				lines[i] = cleanLogLine(lines[i])
+			}
+		}
+		return asyncResult{
+			kind:            "logdata",
+			reqID:           reqID,
+			lines:           lines,
+			err:             err,
+			fetchedFallback: fetchedFallback,
+		}
+	}
+}
+
 func (u *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.KeyMsg:
@@ -110,8 +177,9 @@ func (u *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		u.width, u.height = m.Width, m.Height
 		return u, nil
 	case uiTickMsg:
-		if u.logMode && u.logPath != "" {
-			u.refreshLog()
+		if u.logMode && u.logPath != "" && !u.logFetching {
+			u.logFetching = true
+			return u, tea.Batch(uiTickCmd(), u.fetchLogCmd(u.logReqID, u.logPath, u.logQueueSocket, u.logTask, u.logFetchAt))
 		}
 		return u, uiTickCmd()
 	case refreshTickMsg:
@@ -128,15 +196,41 @@ func (u *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (u *UI) handleResult(result asyncResult) tea.Cmd {
-	u.busy = false
 	var cmd tea.Cmd
-	if result.kind == "refresh" {
+	switch result.kind {
+	case "refresh":
 		u.refreshing = false
+		if result.err != nil {
+			u.setMessage("Refresh: " + result.err.Error())
+		}
 		u.syncSnapshot()
-	} else if result.kind == "info" {
+		return nil
+	case "logdata":
+		u.logFetching = false
+		if result.fetchedFallback {
+			u.logFetchAt = time.Now()
+		}
+		if !u.logMode || result.reqID != u.logReqID || result.skipped {
+			return nil
+		}
+		if result.err != nil {
+			u.logLines = []string{"Unable to read log: " + result.err.Error()}
+			return nil
+		}
+		u.logLines = result.lines
+		return nil
+	case "info":
+		if u.activeOps > 0 {
+			u.activeOps--
+		}
+		if result.reqID != u.infoReqID {
+			return nil
+		}
 		if result.err != nil {
 			u.setMessage("Info: " + result.err.Error())
 		} else {
+			u.logMode = false
+			u.helpMode = false
 			u.infoMode = true
 			u.infoOffset = 0
 			u.infoLines = make([]string, len(result.lines))
@@ -144,16 +238,28 @@ func (u *UI) handleResult(result asyncResult) tea.Cmd {
 				u.infoLines[i] = cleanLogLine(line)
 			}
 		}
-	} else if result.kind == "logpath" {
+	case "logpath":
+		if u.activeOps > 0 {
+			u.activeOps--
+		}
+		if !u.logMode || result.reqID != u.logReqID {
+			return nil
+		}
 		if result.err != nil {
+			u.logMode = false
+			u.logPath, u.logQueueSocket, u.logLines = "", "", nil
 			u.setMessage("Log: " + result.err.Error())
 		} else if result.path == "" {
 			u.logLines = []string{"No output file is available for this task.", "The task may still be queued or was submitted with tsp -n."}
 		} else {
 			u.logPath = result.path
-			u.refreshLog()
+			u.logFetching = true
+			cmd = u.fetchLogCmd(u.logReqID, u.logPath, u.logQueueSocket, u.logTask, u.logFetchAt)
 		}
-	} else {
+	default:
+		if u.activeOps > 0 {
+			u.activeOps--
+		}
 		if result.err != nil {
 			u.setMessage(result.message + ": " + result.err.Error())
 		} else if result.message != "" {
@@ -169,19 +275,45 @@ func (u *UI) handleResult(result asyncResult) tea.Cmd {
 }
 
 func (u *UI) syncSnapshot() {
+	oldSocket := u.selectedSocket
 	oldID := u.selectedID
 	u.queues = u.manager.Snapshot()
 	if len(u.queues) == 0 {
-		u.selectedQueue, u.selectedTask, u.selectedID = 0, 0, -1
+		u.selectedQueue, u.selectedSocket, u.selectedTask, u.selectedID = 0, "", 0, -1
 		return
 	}
-	if u.selectedQueue >= len(u.queues) {
-		u.selectedQueue = len(u.queues) - 1
+	if oldSocket != "" {
+		matched := false
+		for i, q := range u.queues {
+			if q.Socket == oldSocket {
+				u.selectedQueue = i
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			if u.selectedQueue >= len(u.queues) {
+				u.selectedQueue = len(u.queues) - 1
+			}
+			if u.selectedQueue < 0 {
+				u.selectedQueue = 0
+			}
+			// Queue changed, so don't reuse old task ID from a different queue.
+			oldID = -1
+			u.selectedTask = 0
+			u.taskOffset = 0
+		}
+	} else {
+		if u.selectedQueue >= len(u.queues) {
+			u.selectedQueue = len(u.queues) - 1
+		}
+		if u.selectedQueue < 0 {
+			u.selectedQueue = 0
+		}
 	}
-	if u.selectedQueue < 0 {
-		u.selectedQueue = 0
-	}
+
 	q := u.queues[u.selectedQueue]
+	u.selectedSocket = q.Socket
 	if oldID >= 0 {
 		for i, t := range q.Tasks {
 			if t.ID == oldID {
@@ -224,12 +356,18 @@ func keyOf(msg tea.KeyMsg) terminal.Key {
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		return terminal.Key{Name: "ctrl-c"}
+	case tea.KeyCtrlU:
+		return terminal.Key{Name: "ctrl-u"}
+	case tea.KeyCtrlW:
+		return terminal.Key{Name: "ctrl-w"}
 	case tea.KeyTab:
 		return terminal.Key{Name: "tab"}
 	case tea.KeyEnter:
 		return terminal.Key{Name: "enter"}
-	case tea.KeyBackspace:
+	case tea.KeyBackspace, tea.KeyCtrlH:
 		return terminal.Key{Name: "backspace"}
+	case tea.KeyDelete:
+		return terminal.Key{Name: "delete"}
 	case tea.KeyEsc:
 		return terminal.Key{Name: "esc"}
 	case tea.KeyUp:
@@ -244,20 +382,81 @@ func keyOf(msg tea.KeyMsg) terminal.Key {
 		return terminal.Key{Name: "home"}
 	case tea.KeyEnd:
 		return terminal.Key{Name: "end"}
+	case tea.KeyPgUp:
+		return terminal.Key{Name: "pgup"}
+	case tea.KeyPgDown:
+		return terminal.Key{Name: "pgdown"}
+	case tea.KeySpace:
+		return terminal.Key{Name: "rune", Rune: ' ', Runes: []rune{' '}}
 	case tea.KeyRunes:
 		if len(msg.Runes) > 0 {
-			return terminal.Key{Name: "rune", Rune: msg.Runes[0]}
+			runes := append([]rune(nil), msg.Runes...)
+			return terminal.Key{Name: "rune", Rune: runes[0], Runes: runes}
 		}
 	}
 	return terminal.Key{Name: msg.String()}
 }
 
+func (u *UI) layoutDims() (w, h, bodyRows, leftW, rightW int) {
+	w, h = u.width, u.height
+	if w <= 0 {
+		w = 100
+	}
+	if h <= 0 {
+		h = 30
+	}
+	if w < 30 {
+		w = 30
+	}
+	if h < 8 {
+		h = 8
+	}
+	bodyRows = h - 5
+	if bodyRows < 1 {
+		bodyRows = 1
+	}
+	leftW = queuePanelWidth(u.queues, w)
+	rightW = w - leftW - 3
+	if rightW < 10 {
+		rightW = 10
+		if w > rightW+3 {
+			leftW = w - rightW - 3
+		}
+	}
+	return w, h, bodyRows, leftW, rightW
+}
+
+func (u *UI) pageStep() int {
+	_, _, bodyRows, _, _ := u.layoutDims()
+	step := bodyRows - 2
+	if step < 1 {
+		step = 1
+	}
+	return step
+}
+
+func (u *UI) maxOverlayOffset(lines []string) int {
+	_, _, bodyRows, _, rightW := u.layoutDims()
+	wrapped := wrapLines(lines, rightW)
+	visible := bodyRows - 1
+	if visible < 1 {
+		visible = 1
+	}
+	if len(wrapped) <= visible {
+		return 0
+	}
+	return len(wrapped) - visible
+}
+
 func (u *UI) handleKey(k terminal.Key) tea.Cmd {
+	if k.Name == "ctrl-c" {
+		return tea.Quit
+	}
 	if u.modal == "prompt" {
 		return u.handlePromptKey(k)
 	}
 	if u.modal == "confirm" {
-		if k.Name == "esc" || k.Name == "rune" && (k.Rune == 'n' || k.Rune == 'N') {
+		if k.Name == "esc" || (k.Name == "rune" && (k.Rune == 'n' || k.Rune == 'N')) {
 			u.modal = ""
 			return nil
 		}
@@ -270,40 +469,39 @@ func (u *UI) handleKey(k terminal.Key) tea.Cmd {
 		}
 		return nil
 	}
+	if u.helpMode {
+		if k.Name == "esc" || k.Name == "left" || (k.Name == "rune" && (k.Rune == 'q' || k.Rune == '?')) {
+			u.helpMode = false
+			u.helpOffset = 0
+			return nil
+		}
+		maxOff := u.maxOverlayOffset(helpLines())
+		u.helpOffset = scrollOverlayTopDown(u.helpOffset, maxOff, u.pageStep(), k)
+		return nil
+	}
 	if u.logMode || u.infoMode {
-		if k.Name == "esc" || k.Name == "left" || k.Name == "rune" && (k.Rune == 'q' || k.Rune == 'l' || k.Rune == 'i') {
+		if k.Name == "esc" || k.Name == "left" || (k.Name == "rune" && (k.Rune == 'q' || k.Rune == 'l' || k.Rune == 'i')) {
 			u.logMode, u.infoMode = false, false
-			u.logPath, u.logQueue, u.logLines, u.infoLines = "", "", nil, nil
+			u.logReqID++
+			u.infoReqID++
+			u.logPath, u.logQueueSocket, u.logLines, u.infoLines = "", "", nil, nil
 			u.logOffset, u.infoOffset = 0, 0
+			u.logFetching = false
 			return nil
 		}
 		if u.infoMode {
-			if k.Name == "up" && u.infoOffset > 0 {
-				u.infoOffset--
-			}
-			if k.Name == "down" {
-				u.infoOffset++
-			}
-			if k.Name == "rune" && k.Rune == 'G' {
-				u.infoOffset = 0
-			}
+			maxOff := u.maxOverlayOffset(u.infoLines)
+			u.infoOffset = scrollOverlayTopDown(u.infoOffset, maxOff, u.pageStep(), k)
 			return nil
 		}
-		if k.Name == "up" {
-			u.logOffset++
-		}
-		if k.Name == "down" && u.logOffset > 0 {
-			u.logOffset--
-		}
-		if k.Name == "rune" && k.Rune == 'G' {
-			u.logOffset = 0
-		}
+		maxOff := u.maxOverlayOffset(u.logLines)
+		u.logOffset = scrollOverlayBottomUp(u.logOffset, maxOff, u.pageStep(), k)
 		return nil
 	}
 
 	switch k.Name {
-	case "ctrl-c":
-		return tea.Quit
+	case "tab":
+		u.focus = 1 - u.focus
 	case "left":
 		u.focus = 0
 	case "right":
@@ -319,6 +517,8 @@ func (u *UI) handleKey(k terminal.Key) tea.Cmd {
 	case "enter":
 		if u.focus == 0 {
 			u.focus = 1
+		} else {
+			return u.openInfo()
 		}
 	case "esc":
 		return tea.Quit
@@ -326,35 +526,41 @@ func (u *UI) handleKey(k terminal.Key) tea.Cmd {
 		switch k.Rune {
 		case 'q':
 			return tea.Quit
+		case '?':
+			u.helpMode = true
+			u.helpOffset = 0
+		case 'R':
+			u.setMessage("Refreshing queues...")
+			return u.refreshNow()
 		case 'a':
-			if u.currentQueue() != nil {
-				u.beginPrompt("submit", "Shell command to submit:")
+			if q := u.currentQueue(); q != nil {
+				u.beginPrompt("submit", "Shell command to submit:", q.Name, q.Socket)
 			}
 		case 'n':
-			u.beginPrompt("queue-name", "New queue name:")
+			u.beginPrompt("queue-name", "New queue name:", "", "")
 		case 'd':
 			if q := u.currentQueue(); q != nil {
-				u.confirm("remove-queue", "Remove config registration for queue '"+q.Name+"'? The tsp queue itself will not be stopped.")
+				u.confirm("remove-queue", "Remove config registration for queue '"+q.Name+"'? The tsp queue itself will not be stopped.", q.Name, q.Socket, -1)
 			}
 		case 'k':
-			if t := u.currentTask(); t != nil {
-				u.confirm("kill", fmt.Sprintf("Send SIGTERM to task #%d process group?", t.ID))
+			if q, t := u.currentQueue(), u.currentTask(); q != nil && t != nil {
+				u.confirm("kill", fmt.Sprintf("Send SIGTERM to task #%d in %s?", t.ID, q.Name), q.Name, q.Socket, t.ID)
 			}
 		case 'r':
-			if t := u.currentTask(); t != nil {
-				u.confirm("remove", fmt.Sprintf("Remove task #%d from the queue?", t.ID))
+			if q, t := u.currentQueue(), u.currentTask(); q != nil && t != nil {
+				u.confirm("remove", fmt.Sprintf("Remove task #%d from %s?", t.ID, q.Name), q.Name, q.Socket, t.ID)
 			}
 		case 'C':
 			if q := u.currentQueue(); q != nil {
-				u.confirm("clear", "Clear all finished tasks from queue '"+q.Name+"'?")
+				u.confirm("clear", "Clear all finished tasks from queue '"+q.Name+"'?", q.Name, q.Socket, -1)
 			}
 		case 'u':
-			if t := u.currentTask(); t != nil {
-				return u.runUrgent(t.ID)
+			if q, t := u.currentQueue(), u.currentTask(); q != nil && t != nil {
+				return u.runUrgent(q.Name, q.Socket, t.ID)
 			}
 		case 's':
 			if q := u.currentQueue(); q != nil {
-				u.beginPrompt("slots", "Maximum concurrent tasks (slots):")
+				u.beginPrompt("slots", "Maximum concurrent tasks (slots):", q.Name, q.Socket)
 			}
 		case 'l':
 			if t := u.currentTask(); t != nil {
@@ -371,6 +577,76 @@ func (u *UI) handleKey(k terminal.Key) tea.Cmd {
 	return nil
 }
 
+func scrollOverlayTopDown(offset, maxOff, pageStep int, k terminal.Key) int {
+	switch k.Name {
+	case "up":
+		offset--
+	case "down":
+		offset++
+	case "pgup":
+		offset -= pageStep
+	case "pgdown":
+		offset += pageStep
+	case "home":
+		offset = 0
+	case "end":
+		offset = maxOff
+	case "rune":
+		switch k.Rune {
+		case 'k':
+			offset--
+		case 'j':
+			offset++
+		case 'g':
+			offset = 0
+		case 'G':
+			offset = maxOff
+		}
+	}
+	if offset < 0 {
+		return 0
+	}
+	if offset > maxOff {
+		return maxOff
+	}
+	return offset
+}
+
+func scrollOverlayBottomUp(offset, maxOff, pageStep int, k terminal.Key) int {
+	switch k.Name {
+	case "up":
+		offset++
+	case "down":
+		offset--
+	case "pgup":
+		offset += pageStep
+	case "pgdown":
+		offset -= pageStep
+	case "home":
+		offset = maxOff
+	case "end":
+		offset = 0
+	case "rune":
+		switch k.Rune {
+		case 'k':
+			offset++
+		case 'j':
+			offset--
+		case 'g':
+			offset = maxOff
+		case 'G':
+			offset = 0
+		}
+	}
+	if offset < 0 {
+		return 0
+	}
+	if offset > maxOff {
+		return maxOff
+	}
+	return offset
+}
+
 func (u *UI) moveSelection(delta int) {
 	if u.focus == 0 {
 		if len(u.queues) == 0 {
@@ -383,6 +659,7 @@ func (u *UI) moveSelection(delta int) {
 		if u.selectedQueue >= len(u.queues) {
 			u.selectedQueue = len(u.queues) - 1
 		}
+		u.selectedSocket = u.queues[u.selectedQueue].Socket
 		u.selectedTask, u.selectedID = 0, -1
 		u.taskOffset = 0
 		u.syncSnapshot()
@@ -402,13 +679,36 @@ func (u *UI) moveSelection(delta int) {
 	u.selectedID = q.Tasks[u.selectedTask].ID
 }
 
-func (u *UI) beginPrompt(kind, label string) {
-	u.modal, u.promptKind, u.promptLabel, u.promptValue, u.promptStage = "prompt", kind, label, "", 0
+func (u *UI) beginPrompt(kind, label, queueName, queueSocket string) {
+	u.modal = "prompt"
+	u.promptKind = kind
+	u.promptLabel = label
+	u.promptValue = ""
+	u.promptStage = 0
+	u.targetQueueName = queueName
+	u.targetQueueSocket = queueSocket
+	u.targetTaskID = -1
 }
 
 func (u *UI) handlePromptKey(k terminal.Key) tea.Cmd {
 	if k.Name == "esc" {
 		u.modal = ""
+		return nil
+	}
+	if k.Name == "ctrl-u" {
+		u.promptValue = ""
+		return nil
+	}
+	if k.Name == "ctrl-w" {
+		runes := []rune(u.promptValue)
+		end := len(runes)
+		for end > 0 && runes[end-1] == ' ' {
+			end--
+		}
+		for end > 0 && runes[end-1] != ' ' {
+			end--
+		}
+		u.promptValue = string(runes[:end])
 		return nil
 	}
 	if k.Name == "backspace" {
@@ -446,18 +746,18 @@ func (u *UI) handlePromptKey(k terminal.Key) tea.Cmd {
 				u.modal = ""
 				return nil
 			}
-			q := u.currentQueue()
-			if q == nil {
+			name, socket := u.targetQueueName, u.targetQueueSocket
+			if socket == "" {
 				u.modal = ""
 				return nil
 			}
-			name, command := q.Name, value
+			command := value
 			u.modal = ""
-			u.busy = true
+			u.activeOps++
 			return func() tea.Msg {
 				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 				defer cancel()
-				id, err := u.manager.SubmitShell(ctx, name, command)
+				id, err := u.manager.SubmitShell(ctx, socket, command)
 				msg := "Submitted task #" + strconv.Itoa(id) + " to " + name
 				if err != nil {
 					msg = "Submit failed"
@@ -470,18 +770,17 @@ func (u *UI) handlePromptKey(k terminal.Key) tea.Cmd {
 				u.setMessage("Slots must be a positive integer")
 				return nil
 			}
-			q := u.currentQueue()
-			if q == nil {
+			name, socket := u.targetQueueName, u.targetQueueSocket
+			if socket == "" {
 				u.modal = ""
 				return nil
 			}
-			name := q.Name
 			u.modal = ""
-			u.busy = true
+			u.activeOps++
 			return func() tea.Msg {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				err := u.manager.SetSlots(ctx, name, n)
+				err := u.manager.SetSlots(ctx, socket, n)
 				msg := fmt.Sprintf("Set %s slots to %d", name, n)
 				if err != nil {
 					msg = "Set slots failed"
@@ -491,30 +790,43 @@ func (u *UI) handlePromptKey(k terminal.Key) tea.Cmd {
 		}
 		return nil
 	}
-	if k.Name == "rune" && k.Rune >= 32 && k.Rune != 127 {
-		u.promptValue += string(k.Rune)
+	if k.Name == "rune" {
+		runes := k.Runes
+		if len(runes) == 0 && k.Rune != 0 {
+			runes = []rune{k.Rune}
+		}
+		var b strings.Builder
+		for _, r := range runes {
+			if r >= 32 && r != 127 {
+				b.WriteRune(r)
+			}
+		}
+		if b.Len() > 0 {
+			u.promptValue += b.String()
+		}
 	}
 	return nil
 }
 
-func (u *UI) confirm(kind, text string) {
-	u.modal, u.confirmKind, u.confirmText = "confirm", kind, text
+func (u *UI) confirm(kind, text, queueName, queueSocket string, taskID int) {
+	u.modal = "confirm"
+	u.confirmKind = kind
+	u.confirmText = text
+	u.targetQueueName = queueName
+	u.targetQueueSocket = queueSocket
+	u.targetTaskID = taskID
 }
 
 func (u *UI) executeConfirmed() tea.Cmd {
 	kind := u.confirmKind
+	name := u.targetQueueName
+	socket := u.targetQueueSocket
+	id := u.targetTaskID
 	u.modal = ""
-	q := u.currentQueue()
-	if q == nil {
+	if socket == "" && name == "" {
 		return nil
 	}
-	name := q.Name
-	t := u.currentTask()
-	id := -1
-	if t != nil {
-		id = t.ID
-	}
-	u.busy = true
+	u.activeOps++
 	return func() tea.Msg {
 		callCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
@@ -522,16 +834,16 @@ func (u *UI) executeConfirmed() tea.Cmd {
 		msg := ""
 		switch kind {
 		case "kill":
-			err = u.manager.Kill(callCtx, name, id)
+			err = u.manager.Kill(callCtx, socket, id)
 			msg = fmt.Sprintf("Sent SIGTERM to task #%d", id)
 		case "remove":
-			err = u.manager.Remove(callCtx, name, id)
+			err = u.manager.Remove(callCtx, socket, id)
 			msg = fmt.Sprintf("Removed task #%d", id)
 		case "clear":
-			err = u.manager.ClearFinished(callCtx, name)
+			err = u.manager.ClearFinished(callCtx, socket)
 			msg = "Cleared finished tasks from " + name
 		case "remove-queue":
-			err = u.manager.RemoveQueue(name)
+			err = u.manager.RemoveQueue(socket)
 			msg = "Removed queue registration: " + name
 		}
 		if err != nil {
@@ -541,18 +853,13 @@ func (u *UI) executeConfirmed() tea.Cmd {
 	}
 }
 
-func (u *UI) runUrgent(id int) tea.Cmd {
-	q := u.currentQueue()
-	if q == nil {
-		return nil
-	}
-	name := q.Name
-	u.busy = true
+func (u *UI) runUrgent(queueName, queueSocket string, id int) tea.Cmd {
+	u.activeOps++
 	return func() tea.Msg {
 		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		err := u.manager.Urgent(c, name, id)
-		msg := fmt.Sprintf("Moved task #%d forward", id)
+		err := u.manager.Urgent(c, queueSocket, id)
+		msg := fmt.Sprintf("Moved task #%d forward in %s", id, queueName)
 		if err != nil {
 			msg = "Could not reprioritize task"
 		}
@@ -573,22 +880,24 @@ func (u *UI) openInfo() tea.Cmd {
 	if q == nil || t == nil {
 		return nil
 	}
-	name, id, output := q.Name, t.ID, t.Output
-	u.busy = true
+	socket, id, output := q.Socket, t.ID, t.Output
+	u.infoReqID++
+	reqID := u.infoReqID
+	u.activeOps++
 	return func() tea.Msg {
 		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		out, err := u.manager.Info(c, name, id)
-		if output == "" {
-			if p, oerr := u.manager.OutputPath(c, name, id); oerr == nil {
+		out, err := u.manager.Info(c, socket, id)
+		if err == nil && output == "" {
+			if p, oerr := u.manager.OutputPath(c, socket, id); oerr == nil {
 				output = p
 			}
 		}
-		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		lines := spooler.NormalizeOutputLines(out, false, 0)
 		if output != "" {
 			lines = append(lines, "Output file: "+output)
 		}
-		return asyncResult{kind: "info", lines: lines, err: err}
+		return asyncResult{kind: "info", reqID: reqID, lines: lines, err: err}
 	}
 }
 
@@ -597,101 +906,167 @@ func (u *UI) openLogs(id int) tea.Cmd {
 	if q == nil {
 		return nil
 	}
-	name := q.Name
+	socket := q.Socket
 	output := ""
 	if t := u.currentTask(); t != nil {
 		output = t.Output
 	}
-	u.logMode, u.logTask, u.logQueue, u.logOffset = true, id, name, 0
+	u.infoMode = false
+	u.helpMode = false
+	u.logMode = true
+	u.logTask = id
+	u.logQueueSocket = socket
+	u.logPath = ""
+	u.logOffset = 0
 	u.logFetchAt = time.Time{}
+	u.logFetching = false
+	u.logReqID++
+	reqID := u.logReqID
 	u.logLines = []string{"Loading output file..."}
-	u.busy = true
+	u.activeOps++
 	return func() tea.Msg {
 		if output != "" {
-			return asyncResult{kind: "logpath", path: output}
+			return asyncResult{kind: "logpath", reqID: reqID, path: output}
 		}
 		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		path, err := u.manager.OutputPath(c, name, id)
-		return asyncResult{kind: "logpath", path: path, err: err}
+		path, err := u.manager.OutputPath(c, socket, id)
+		return asyncResult{kind: "logpath", reqID: reqID, path: path, err: err}
 	}
 }
 
-// logAnsi matches ANSI escape sequences: CSI (\x1b[...letter) and OSC
-// (\x1b]...terminated by BEL or ST).
-var logAnsi = regexp.MustCompile(`\x1b\[[0-9;:]*[ -/]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?`)
+// ansiSeq matches ANSI escape sequences:
+// - CSI (\x1b[ params intermediates final, including private prefixes ? < = >)
+// - OSC (\x1b]... terminated by BEL or ST)
+// - 2-byte ESC sequences (\x1b(B, \x1bM, etc.)
+var ansiSeq = regexp.MustCompile(`\x1b\[[0-9:;<=>?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[()][A-Za-z0-9]|\x1b[@-Z\\-_]`)
 
-// cleanLogLine strips terminal-hostile sequences from a raw log line while
-// keeping SGR color codes. Tabs are expanded; other control chars are dropped.
-func cleanLogLine(s string) string {
-	s = logAnsi.ReplaceAllStringFunc(s, func(m string) string {
-		if strings.HasPrefix(m, "\x1b[") && strings.HasSuffix(m, "m") && !strings.ContainsAny(m[2:len(m)-1], " -/") {
-			return m
+func isSafeSGR(seq string) bool {
+	if !strings.HasPrefix(seq, "\x1b[") || !strings.HasSuffix(seq, "m") {
+		return false
+	}
+	params := seq[2 : len(seq)-1]
+	for i := 0; i < len(params); i++ {
+		c := params[i]
+		if (c < '0' || c > '9') && c != ';' && c != ':' {
+			return false
 		}
-		return ""
-	})
-	return strings.Map(func(r rune) rune {
+	}
+	return true
+}
+
+func stripControls(s string, tabReplacement string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
 		if r == '\t' {
-			return ' '
+			b.WriteString(tabReplacement)
+			continue
 		}
 		if r < 0x20 || r == 0x7f {
-			return -1
+			continue
 		}
-		return r
-	}, s)
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
-func (u *UI) refreshLog() {
-	if u.logPath == "" {
-		return
+// cleanLogLine strips terminal-hostile sequences and control chars from a raw
+// log line while preserving SGR color codes verbatim (including their ESC byte).
+func cleanLogLine(s string) string {
+	matches := ansiSeq.FindAllStringIndex(s, -1)
+	if len(matches) == 0 {
+		return stripControls(s, "    ")
 	}
-	var lines []string
-	var err error
-	if st, serr := os.Stat(u.logPath); serr == nil && st.Mode().IsRegular() {
-		lines, err = spooler.ReadTail(u.logPath, 500, 256*1024)
-	} else {
-		// The output path is missing or not a regular file (e.g. a stale unix
-		// socket left by another tsp instance): ask the daemon instead. This is
-		// more expensive than a file read, so throttle it to once per second.
-		if time.Since(u.logFetchAt) < time.Second {
-			return
+	var b strings.Builder
+	b.Grow(len(s))
+	last := 0
+	for _, m := range matches {
+		if m[0] > last {
+			b.WriteString(stripControls(s[last:m[0]], "    "))
 		}
-		u.logFetchAt = time.Now()
-		var out string
-		c, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		out, err = u.manager.TaskOutput(c, u.logQueue, u.logTask)
-		cancel()
-		if err == nil {
-			lines = strings.Split(strings.TrimRight(strings.ReplaceAll(out, "\r\n", "\n"), "\n"), "\n")
-			if len(lines) > 500 {
-				lines = lines[len(lines)-500:]
-			}
+		seq := s[m[0]:m[1]]
+		if isSafeSGR(seq) {
+			b.WriteString(seq)
 		}
+		last = m[1]
 	}
-	if err != nil {
-		u.logLines = []string{"Unable to read log: " + err.Error()}
-		return
+	if last < len(s) {
+		b.WriteString(stripControls(s[last:], "    "))
 	}
-	for i := range lines {
-		lines[i] = cleanLogLine(lines[i])
+	return b.String()
+}
+
+// cleanTableCell strips all ANSI sequences and control characters for single-line table cells.
+func cleanTableCell(s string) string {
+	s = ansiSeq.ReplaceAllString(s, "")
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r == '\t' || r == '\n' || r == '\r' {
+			b.WriteByte(' ')
+			continue
+		}
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		b.WriteRune(r)
 	}
-	u.logLines = lines
+	return b.String()
+}
+
+func helpLines() []string {
+	return []string{
+		"Navigation",
+		"  ↑ / ↓         Move selection in active pane",
+		"  Tab           Switch between QUEUES and TASKS panes",
+		"  ← / →         Focus QUEUES / focus TASKS or open details",
+		"  g / t         Jump focus to QUEUES / TASKS",
+		"  Enter         Open TASKS pane or view selected task details",
+		"",
+		"Task Actions",
+		"  a             Submit shell command to current queue",
+		"  i             View task information (tsp -i)",
+		"  l             View live task output (tail / refresh)",
+		"  k             Send SIGTERM to task process group (tsp -k)",
+		"  r             Remove task from queue (tsp -r)",
+		"  u             Move queued task forward (tsp -u)",
+		"  C             Clear finished tasks in current queue (tsp -C)",
+		"",
+		"Queue Actions",
+		"  n             Register a custom queue socket",
+		"  d             Remove queue config registration (does not stop tsp)",
+		"  s             Set maximum concurrent slots (tsp -S)",
+		"  R             Refresh all queues immediately",
+		"",
+		"Overlays (Logs / Details / Help)",
+		"  ↑ / ↓ / j / k Scroll line by line",
+		"  PgUp / PgDn   Scroll by page",
+		"  g / Home      Jump to top",
+		"  G / End       Jump to bottom",
+		"  Esc / ← / q   Close overlay",
+		"",
+		"Prompt Editing",
+		"  Backspace     Delete previous character",
+		"  Ctrl-W        Delete previous word",
+		"  Ctrl-U        Clear input",
+		"  Esc           Cancel prompt",
+		"",
+		"General",
+		"  ?             Show this help",
+		"  q / Esc       Quit",
+		"  Ctrl-C        Quit immediately from any screen",
+	}
 }
 
 func (u *UI) View() string {
-	w, h := u.width, u.height
-	if w < 60 {
-		w = 60
-	}
-	if h < 18 {
-		h = 18
-	}
+	w, _, bodyRows, leftW, rightW := u.layoutDims()
 	var b strings.Builder
 	write := func(s string) { b.WriteString(s); b.WriteString("\n") }
 
 	q := u.currentQueue()
 	status := ""
-	if u.busy {
+	if u.activeOps > 0 {
 		status = "Working..."
 	}
 	if u.message != "" && time.Since(u.messageAt) < 8*time.Second {
@@ -703,16 +1078,15 @@ func (u *UI) View() string {
 		}
 		status += "selected: " + q.Socket
 	}
-	title := " TSP MANAGER  v0.1.0"
-	write(color("36;1", title) + fit("   "+status, w-len(title)))
+	title := " TSP MANAGER  v" + u.version
+	titleW := runewidth.StringWidth(title)
+	if titleW >= w {
+		write(color("36;1", fit(title, w)))
+	} else {
+		write(color("36;1", title) + fit("   "+cleanTableCell(status), w-titleW))
+	}
 	write(strings.Repeat("─", w))
 
-	bodyRows := h - 5
-	leftW := queuePanelWidth(u.queues, w)
-	rightW := w - leftW - 3
-	if rightW < 25 {
-		rightW = 25
-	}
 	write(color("33;1", fit(" QUEUES", leftW)) + " │ " + color("33;1", fit(" TASKS", rightW)))
 	u.queueOffset = scrollWindow(u.queueOffset, u.selectedQueue, bodyRows, len(u.queues))
 	if q != nil {
@@ -720,6 +1094,29 @@ func (u *UI) View() string {
 	} else {
 		u.taskOffset = 0
 	}
+
+	var wrappedOverlay []string
+	overlayVisible := bodyRows - 1
+	if overlayVisible < 1 {
+		overlayVisible = 1
+	}
+	if u.helpMode {
+		wrappedOverlay = wrapLines(helpLines(), rightW)
+		if maxOff := max(0, len(wrappedOverlay)-overlayVisible); u.helpOffset > maxOff {
+			u.helpOffset = maxOff
+		}
+	} else if u.logMode {
+		wrappedOverlay = wrapLines(u.logLines, rightW)
+		if maxOff := max(0, len(wrappedOverlay)-overlayVisible); u.logOffset > maxOff {
+			u.logOffset = maxOff
+		}
+	} else if u.infoMode {
+		wrappedOverlay = wrapLines(u.infoLines, rightW)
+		if maxOff := max(0, len(wrappedOverlay)-overlayVisible); u.infoOffset > maxOff {
+			u.infoOffset = maxOff
+		}
+	}
+
 	for row := 0; row < bodyRows; row++ {
 		left := ""
 		if qi := row + u.queueOffset; qi < len(u.queues) {
@@ -739,21 +1136,32 @@ func (u *UI) View() string {
 			if item.Error != "" && !item.Active {
 				state = color("31", "!")
 			}
-			name := item.Name
+			name := cleanTableCell(item.Name)
 			count := queueCountLabel(item)
 			left = mark + state + " " + name + "  " + count
 		}
 
 		right := ""
-		if u.logMode {
-			right = u.renderLogLine(row, bodyRows, rightW)
+		if u.helpMode {
+			right = renderTopDownOverlay(row, " KEYBOARD SHORTCUTS  (Esc/? to close; ↑↓ scroll)", wrappedOverlay, u.helpOffset)
+		} else if u.logMode {
+			header := fmt.Sprintf(" LIVE OUTPUT  (Esc to close; ↑↓/PgUp/PgDn scroll; G bottom)  task #%d  %s", u.logTask, cleanTableCell(u.logPath))
+			right = renderBottomUpOverlay(row, bodyRows, header, wrappedOverlay, u.logOffset, "(empty output)")
 		} else if u.infoMode {
-			right = u.renderInfoLine(row, bodyRows, rightW)
+			right = renderTopDownOverlay(row, " TASK INFORMATION  (Esc to close; ↑↓/PgUp/PgDn scroll)", wrappedOverlay, u.infoOffset)
 		} else if row == 0 {
 			if q != nil {
-				right = fmt.Sprintf("ID   %-9s %-5s %-10s %-18s %s", "STATE", "EXIT", "TIME", "OUTPUT", "COMMAND")
+				right = fmt.Sprintf("  %-4s %-9s %-5s %-10s %-18s %s", "ID", "STATE", "EXIT", "TIME", "OUTPUT", "COMMAND")
 			} else {
 				right = "No active queues discovered"
+			}
+		} else if q != nil && !q.Active && len(q.Tasks) == 0 {
+			if row == 1 {
+				errMsg := q.Error
+				if errMsg == "" {
+					errMsg = "queue is offline"
+				}
+				right = color("31", "  Queue offline: "+cleanTableCell(errMsg))
 			}
 		} else if q != nil && row-1+u.taskOffset < len(q.Tasks) {
 			ti := row - 1 + u.taskOffset
@@ -767,21 +1175,29 @@ func (u *UI) View() string {
 				}
 			}
 			state := stateColor(t.State)
-			command := t.Command
+			command := cleanTableCell(t.Command)
 			if command == "" {
 				command = "(command unavailable)"
 			}
-			output := t.Output
+			output := cleanTableCell(t.Output)
 			if output == "" {
 				output = "-"
 			}
-			right = fmt.Sprintf("%s%-4d %-9s %-5s %-10s %-18s %s", marker, t.ID, fit(state, 9), fit(t.ExitCode, 5), fit(formatTimes(t.Times), 10), output, command)
+			right = fmt.Sprintf("%s%-4d %s %s %s %s %s",
+				marker,
+				t.ID,
+				fit(state, 9),
+				fit(cleanTableCell(t.ExitCode), 5),
+				fit(formatTimes(t.Times), 10),
+				fit(output, 18),
+				command,
+			)
 		}
 		write(fit(left, leftW) + " │ " + fit(right, rightW))
 	}
 	write(strings.Repeat("─", w))
 	if u.modal == "prompt" {
-		write(color("33;1", fit(" "+u.promptLabel+" "+u.promptValue+"▌", w)))
+		write(color("33;1", fitPrompt(" "+u.promptLabel+" ", u.promptValue, "▌", w)))
 	} else if u.modal == "confirm" {
 		hint := "y/Enter"
 		if u.confirmKind == "remove" {
@@ -789,21 +1205,37 @@ func (u *UI) View() string {
 		}
 		write(color("31;1", fit(" CONFIRM: "+u.confirmText+" ["+hint+" = yes, n/Esc = no]", w)))
 	} else {
-		write(fit(" ←→ Focus/Details  ↑↓ Navigate  a Submit  n Add queue  k Kill  r Remove  C Clear  u Urgent  s Slots  l Logs  q/Esc Quit", w))
+		write(fit(" Tab/←→ Pane  ↑↓ Move  Enter/i Details  l Logs  a Submit  n Add  d DelQ  k Kill  r Remove  C Clear  u Urgent  s Slots  R Refresh  ? Help  q Quit", w))
 	}
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
-func (u *UI) renderLogLine(row, bodyRows, width int) string {
+func renderTopDownOverlay(row int, title string, lines []string, offset int) string {
 	if row == 0 {
-		return color("33;1", fmt.Sprintf(" LIVE OUTPUT  (Esc to close; ↑↓ scroll)  task #%d  %s", u.logTask, u.logPath))
+		return color("33;1", title)
 	}
-	lines := u.logLines
+	idx := offset + row - 1
+	if idx >= 0 && idx < len(lines) {
+		return lines[idx]
+	}
+	return ""
+}
+
+func renderBottomUpOverlay(row, bodyRows int, title string, lines []string, offset int, emptyLabel string) string {
+	if row == 0 {
+		return color("33;1", title)
+	}
 	if len(lines) == 0 {
-		return "(empty output)"
+		if row == 1 {
+			return emptyLabel
+		}
+		return ""
 	}
 	visible := bodyRows - 1
-	end := len(lines) - u.logOffset
+	if visible < 1 {
+		visible = 1
+	}
+	end := len(lines) - offset
 	if end < 0 {
 		end = 0
 	}
@@ -813,25 +1245,6 @@ func (u *UI) renderLogLine(row, bodyRows, width int) string {
 	}
 	idx := start + row - 1
 	if idx >= 0 && idx < end {
-		return lines[idx]
-	}
-	return ""
-}
-
-func (u *UI) renderInfoLine(row, bodyRows, width int) string {
-	if row == 0 {
-		return color("33;1", " TASK INFORMATION  (Esc to close; ↑↓ scroll)")
-	}
-	lines := wrapLines(u.infoLines, width)
-	max := len(lines) - (bodyRows - 1)
-	if max < 0 {
-		max = 0
-	}
-	if u.infoOffset > max {
-		u.infoOffset = max
-	}
-	idx := u.infoOffset + row - 1
-	if idx >= 0 && idx < len(lines) {
 		return lines[idx]
 	}
 	return ""
@@ -861,7 +1274,7 @@ func queuePanelWidth(queues []model.Queue, totalWidth int) int {
 	needed := minW
 	for _, q := range queues {
 		// Row format: mark(2) + state(1) + " "(1) + name + "  "(2) + count
-		lineW := 6 + utf8.RuneCountInString(q.Name) + len(queueCountLabel(q)) + padding
+		lineW := 6 + runewidth.StringWidth(cleanTableCell(q.Name)) + len(queueCountLabel(q)) + padding
 		if lineW > needed {
 			needed = lineW
 		}
@@ -884,8 +1297,8 @@ func scrollWindow(offset, sel, visible, total int) int {
 	if sel >= offset+visible {
 		offset = sel - visible + 1
 	}
-	if max := total - visible; offset > max {
-		offset = max
+	if maxOff := total - visible; offset > maxOff {
+		offset = maxOff
 	}
 	if offset < 0 {
 		offset = 0
@@ -904,35 +1317,71 @@ func formatTimes(raw string) string {
 	return time.Duration(f * float64(time.Second)).Truncate(time.Second).String()
 }
 
+func skipANSISeq(s string, i int) (int, bool) {
+	if !strings.HasPrefix(s[i:], "\x1b[") {
+		return i, false
+	}
+	j := i + 2
+	for j < len(s) && s[j] != 'm' {
+		j++
+	}
+	if j < len(s) {
+		return j + 1, true
+	}
+	return i, false
+}
+
+func ansiDisplayWidth(s string) int {
+	w := 0
+	for i := 0; i < len(s); {
+		if next, ok := skipANSISeq(s, i); ok {
+			i = next
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		rw := runewidth.RuneWidth(r)
+		if rw > 0 {
+			w += rw
+		}
+		i += size
+	}
+	return w
+}
+
 func fit(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	// Preserve ANSI color sequences while measuring visible rune width.
+	totalW := ansiDisplayWidth(s)
+	if totalW <= width {
+		result := s + strings.Repeat(" ", width-totalW)
+		if strings.Contains(result, "\x1b[") && !strings.HasSuffix(result, "\x1b[0m") {
+			result += "\x1b[0m"
+		}
+		return result
+	}
+
 	var out strings.Builder
 	visible := 0
+	limit := width - 1
 	for i := 0; i < len(s); {
-		if strings.HasPrefix(s[i:], "\x1b[") {
-			j := i + 2
-			for j < len(s) && s[j] != 'm' {
-				j++
-			}
-			if j < len(s) {
-				out.WriteString(s[i : j+1])
-				i = j + 1
-				continue
-			}
+		if next, ok := skipANSISeq(s, i); ok {
+			out.WriteString(s[i:next])
+			i = next
+			continue
 		}
 		r, size := utf8.DecodeRuneInString(s[i:])
-		if visible < width {
-			if visible == width-1 && hasVisibleRune(s[i+size:]) {
-				out.WriteRune('…')
-				visible++
-				break
-			}
-			out.WriteRune(r)
-			visible++
+		rw := runewidth.RuneWidth(r)
+		if rw < 0 {
+			rw = 0
 		}
+		if visible+rw > limit {
+			out.WriteRune('…')
+			visible++
+			break
+		}
+		out.WriteRune(r)
+		visible += rw
 		i += size
 	}
 	if visible < width {
@@ -945,34 +1394,79 @@ func fit(s string, width int) string {
 	return result
 }
 
-// wrapLines hard-wraps each line to width visible runes so long lines (such
-// as task commands) are shown in full instead of being truncated. ANSI escape
-// sequences are passed through without counting toward the width.
+// fitPrompt keeps the trailing portion of value and the cursor suffix visible
+// when the typed command exceeds the terminal width.
+func fitPrompt(prefix, value, suffix string, width int) string {
+	full := prefix + value + suffix
+	if runewidth.StringWidth(full) <= width {
+		return fit(full, width)
+	}
+	avail := width - runewidth.StringWidth(prefix) - runewidth.StringWidth(suffix) - 1 // 1 for leading '…'
+	if avail <= 0 {
+		return fit(full, width)
+	}
+	runes := []rune(value)
+	takenW := 0
+	start := len(runes)
+	for start > 0 {
+		rw := runewidth.RuneWidth(runes[start-1])
+		if rw < 0 {
+			rw = 0
+		}
+		if takenW+rw > avail {
+			break
+		}
+		takenW += rw
+		start--
+	}
+	return fit(prefix+"…"+string(runes[start:])+suffix, width)
+}
+
+// wrapLines hard-wraps each line to width terminal display columns so long
+// lines (such as task commands or logs) are shown in full instead of truncated.
+// ANSI SGR sequences are passed through without counting toward the width.
 func wrapLines(lines []string, width int) []string {
 	if width < 1 {
 		return lines
 	}
 	var out []string
 	for _, s := range lines {
+		if s == "" {
+			out = append(out, "")
+			continue
+		}
 		for {
 			var b strings.Builder
 			visible, i := 0, 0
-			for i < len(s) && visible < width {
-				if strings.HasPrefix(s[i:], "\x1b[") {
-					j := i + 2
-					for j < len(s) && s[j] != 'm' {
-						j++
-					}
-					if j < len(s) {
-						b.WriteString(s[i : j+1])
-						i = j + 1
-						continue
-					}
+			for i < len(s) {
+				if next, ok := skipANSISeq(s, i); ok {
+					b.WriteString(s[i:next])
+					i = next
+					continue
 				}
 				r, size := utf8.DecodeRuneInString(s[i:])
+				rw := runewidth.RuneWidth(r)
+				if rw < 0 {
+					rw = 0
+				}
+				if visible > 0 && visible+rw > width {
+					break
+				}
 				b.WriteRune(r)
-				visible++
+				visible += rw
 				i += size
+				if visible >= width {
+					break
+				}
+			}
+			// Consume any trailing ANSI reset right at the wrap boundary.
+			for i < len(s) {
+				if next, ok := skipANSISeq(s, i); ok {
+					b.WriteString(s[i:next])
+					i = next
+					continue
+				}
+				break
 			}
 			out = append(out, b.String())
 			if s = s[i:]; s == "" {
@@ -983,33 +1477,18 @@ func wrapLines(lines []string, width int) []string {
 	return out
 }
 
-func hasVisibleRune(s string) bool {
-	for i := 0; i < len(s); {
-		if strings.HasPrefix(s[i:], "\x1b[") {
-			j := i + 2
-			for j < len(s) && s[j] != 'm' {
-				j++
-			}
-			if j < len(s) {
-				i = j + 1
-				continue
-			}
-		}
-		return true
-	}
-	return false
-}
-
 func color(code, s string) string { return "\x1b[" + code + "m" + s + "\x1b[0m" }
 
 func stateColor(s string) string {
 	switch strings.ToLower(s) {
 	case "running":
 		return color("32;1", s)
-	case "queued", "waiting":
+	case "queued", "waiting", "allocating":
 		return color("33", s)
 	case "finished", "done":
 		return color("36", s)
+	case "skipped":
+		return color("90", s)
 	case "failed":
 		return color("31;1", s)
 	default:

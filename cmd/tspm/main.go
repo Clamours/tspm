@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -32,7 +33,10 @@ func run(args []string) error {
 	cfgPath := config.DefaultPath()
 	tspBinOverride := ""
 	for len(args) > 0 {
-		if args[0] == "--config" && len(args) > 1 {
+		if args[0] == "--config" {
+			if len(args) < 2 {
+				return errors.New("--config requires a file path")
+			}
 			cfgPath, args = args[1], args[2:]
 			continue
 		}
@@ -40,7 +44,10 @@ func run(args []string) error {
 			cfgPath, args = strings.TrimPrefix(args[0], "--config="), args[1:]
 			continue
 		}
-		if args[0] == "--tsp-bin" && len(args) > 1 {
+		if args[0] == "--tsp-bin" {
+			if len(args) < 2 {
+				return errors.New("--tsp-bin requires an executable path")
+			}
 			tspBinOverride, args = args[1], args[2:]
 			continue
 		}
@@ -49,6 +56,19 @@ func run(args []string) error {
 			continue
 		}
 		break
+	}
+
+	// Handle help and version before loading config so a malformed config
+	// never blocks inspecting CLI usage or version.
+	if len(args) > 0 {
+		switch args[0] {
+		case "version", "--version", "-V":
+			fmt.Printf("tspm %s\n", version)
+			return nil
+		case "help", "--help", "-h":
+			printHelp(cfgPath)
+			return nil
+		}
 	}
 
 	cfg, err := config.Load(cfgPath)
@@ -63,22 +83,16 @@ func run(args []string) error {
 	if len(args) == 0 {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		return ui.New(m).Run(ctx)
+		return ui.New(m, version).Run(ctx)
 	}
 
 	switch args[0] {
-	case "version", "--version", "-V":
-		fmt.Printf("tspm %s\n", version)
-		return nil
-	case "help", "--help", "-h":
-		printHelp()
-		return nil
 	case "config":
-		if len(args) > 1 && args[1] == "path" {
+		if len(args) == 2 && args[1] == "path" {
 			fmt.Println(cfgPath)
 			return nil
 		}
-		if len(args) > 1 && args[1] == "init" {
+		if len(args) == 2 && args[1] == "init" {
 			if _, err := os.Stat(cfgPath); err == nil {
 				return fmt.Errorf("config already exists: %s", cfgPath)
 			}
@@ -90,8 +104,14 @@ func run(args []string) error {
 		}
 		return errors.New("usage: tspm config path|init")
 	case "doctor":
+		if len(args) > 1 {
+			return errors.New("usage: tspm doctor")
+		}
 		return doctor(m, cfgPath)
 	case "queues":
+		if len(args) > 1 {
+			return errors.New("usage: tspm queues")
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := m.Refresh(ctx); err != nil {
@@ -100,6 +120,15 @@ func run(args []string) error {
 		printQueues(m.Snapshot())
 		return nil
 	case "status":
+		fs := flag.NewFlagSet("status", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		_ = fs.Bool("json", true, "output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() > 0 {
+			return errors.New("usage: tspm status [--json]")
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := m.Refresh(ctx); err != nil {
@@ -120,7 +149,7 @@ func run(args []string) error {
 			if err := m.AddQueue(args[2], args[3]); err != nil {
 				return err
 			}
-			fmt.Printf("Registered queue %q -> %s\n", args[2], args[3])
+			fmt.Printf("Registered queue %q -> %s\n", args[2], filepath.Clean(args[3]))
 			return nil
 		case "remove":
 			if len(args) != 3 {
@@ -136,6 +165,7 @@ func run(args []string) error {
 		}
 	case "submit":
 		fs := flag.NewFlagSet("submit", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
 		queue := fs.String("q", "", "queue name")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -150,11 +180,12 @@ func run(args []string) error {
 		if len(cmdArgs) == 0 {
 			return errors.New("submit requires a command after --")
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if err := m.Refresh(ctx); err != nil {
+		if _, err := m.BinaryAvailable(); err != nil {
 			return err
 		}
+		m.DiscoverOnly()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
 		id, err := m.SubmitArgs(ctx, *queue, cmdArgs)
 		if err != nil {
 			return err
@@ -162,7 +193,7 @@ func run(args []string) error {
 		fmt.Printf("Submitted task #%d to queue %s\n", id, *queue)
 		return nil
 	default:
-		printHelp()
+		printHelp(cfgPath)
 		return fmt.Errorf("unknown command %q", args[0])
 	}
 }
@@ -185,7 +216,11 @@ func doctor(m *manager.Manager, cfgPath string) error {
 	fmt.Printf("Discovered/registered queues: %d\n", len(queues))
 	for _, q := range queues {
 		if q.Active {
-			fmt.Printf("[ OK ] %-16s %s (running=%d pending=%d slots=%d)\n", q.Name, q.Socket, q.RunningCount(), q.PendingCount(), q.Slots)
+			slots := "?"
+			if q.Slots >= 1 {
+				slots = fmt.Sprintf("%d", q.Slots)
+			}
+			fmt.Printf("[ OK ] %-16s %s (running=%d pending=%d slots=%s)\n", q.Name, q.Socket, q.RunningCount(), q.PendingCount(), slots)
 		} else {
 			fmt.Printf("[WARN] %-16s %s (%s)\n", q.Name, q.Socket, q.Error)
 		}
@@ -203,20 +238,24 @@ func printQueues(queues []model.Queue) {
 		if q.Active {
 			status = "active"
 		}
-		fmt.Printf("%-18s %-8s %-10s %-9d %-9d %s\n", q.Name, status, fmt.Sprintf("%d/%d", q.RunningCount(), q.Slots), q.PendingCount(), q.FinishedCount(), q.Socket)
+		running := fmt.Sprintf("%d/?", q.RunningCount())
+		if q.Slots >= 1 {
+			running = fmt.Sprintf("%d/%d", q.RunningCount(), q.Slots)
+		}
+		fmt.Printf("%-18s %-8s %-10s %-9d %-9d %s\n", q.Name, status, running, q.PendingCount(), q.FinishedCount(), q.Socket)
 		if q.Error != "" {
 			fmt.Println("  !", q.Error)
 		}
 	}
 }
 
-func printHelp() {
+func printHelp(cfgPath string) {
 	fmt.Printf(`tspm %s — multi-queue manager for Task Spooler
 
 Usage:
   tspm [global options]                 Open interactive TUI
   tspm queues                           List discovered queues
-  tspm status                           Print queue/task state as JSON
+  tspm status [--json]                  Print queue/task state as JSON
   tspm doctor                           Check tsp installation and queues
   tspm queue add <name> <socket>        Register a custom socket
   tspm queue remove <name>              Remove a queue registration only
@@ -230,14 +269,16 @@ Global options (must appear before the command):
   --tsp-bin <path>                      Use a non-default tsp executable
 
 TUI keys:
-  ↑/↓       Navigate queue/task list       ←/→       Switch pane / open details
-  Esc/←     Close details                  a         Submit shell command
-  n         Register queue                 d         Remove registration
-  k         Send SIGTERM to task            r         Remove task from queue
-  C         Clear finished tasks           u         Move task forward
-  s         Change queue slots             l         View live output
-  q         Quit
+  ↑/↓       Navigate queue/task list       Tab/←/→   Switch pane / open details
+  Enter     Open tasks / task details      i         Task details
+  l         View live output               Esc/←     Close details / logs / help
+  a         Submit shell command           n         Register queue
+  d         Remove queue registration      k         Send SIGTERM to task
+  r         Remove task from queue         C         Clear finished tasks
+  u         Move task forward              s         Change queue slots
+  R         Refresh immediately            ?         Show help
+  q/Esc     Quit                           Ctrl-C    Quit immediately
 
 Config: %s
-`, version, filepath.Clean(config.DefaultPath()))
+`, version, filepath.Clean(cfgPath))
 }

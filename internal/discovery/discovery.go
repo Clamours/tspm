@@ -3,6 +3,8 @@ package discovery
 import (
 	"bufio"
 	"fmt"
+	"hash/fnv"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,21 +22,22 @@ var transientSocketName = regexp.MustCompile(`(?i)^ts-out\.`)
 
 func Discover(cfg config.Config) []model.Queue {
 	activePaths := activeUnixListeners()
-	byPath := make(map[string]model.Queue)
+	byKey := make(map[string]model.Queue)
 	ordered := make([]string, 0)
 	add := func(q model.Queue) {
 		q.Socket = filepath.Clean(q.Socket)
 		if q.Socket == "." || q.Socket == "" {
 			return
 		}
-		if existing, ok := byPath[q.Socket]; ok {
+		key := canonicalSocketPath(q.Socket)
+		if existing, ok := byKey[key]; ok {
 			if existing.Source == "auto" && q.Source != "auto" {
-				byPath[q.Socket] = q
+				byKey[key] = q
 			}
 			return
 		}
-		byPath[q.Socket] = q
-		ordered = append(ordered, q.Socket)
+		byKey[key] = q
+		ordered = append(ordered, key)
 	}
 
 	for _, q := range cfg.Queues {
@@ -57,8 +60,19 @@ func Discover(cfg config.Config) []model.Queue {
 			add(model.Queue{Name: "default", Socket: defaultSocket, Source: "default"})
 		}
 
-		for path := range activePaths {
+		// Sort active paths before iterating so auto-discovery is deterministic.
+		sortedActive := make([]string, 0, len(activePaths))
+		for _, origPath := range activePaths {
+			sortedActive = append(sortedActive, origPath)
+		}
+		sort.Strings(sortedActive)
+
+		for _, path := range sortedActive {
 			if !knownSocketName.MatchString(path) || transientSocketName.MatchString(filepath.Base(path)) {
+				continue
+			}
+			st, err := os.Stat(path)
+			if err != nil || st.Mode()&os.ModeSocket == 0 || !ownedByCurrentUser(st) {
 				continue
 			}
 			name := queueNameFromPath(path)
@@ -67,10 +81,10 @@ func Discover(cfg config.Config) []model.Queue {
 	}
 
 	queues := make([]model.Queue, 0, len(ordered))
-	for _, path := range ordered {
-		q := byPath[path]
-		_, listed := activePaths[path]
-		st, statErr := os.Stat(path)
+	for _, key := range ordered {
+		q := byKey[key]
+		_, listed := activePaths[key]
+		st, statErr := os.Stat(q.Socket)
 		if statErr == nil && st.Mode()&os.ModeSocket == 0 {
 			q.Error = "path exists but is not a Unix socket"
 		} else if statErr != nil {
@@ -94,10 +108,49 @@ func Discover(cfg config.Config) []model.Queue {
 				auto = append(auto, q)
 			}
 		}
-		sort.SliceStable(auto, func(i, j int) bool { return auto[i].Name < auto[j].Name })
+		sort.SliceStable(auto, func(i, j int) bool {
+			if auto[i].Name != auto[j].Name {
+				return auto[i].Name < auto[j].Name
+			}
+			return auto[i].Socket < auto[j].Socket
+		})
 		queues = append(configured, auto...)
 	}
+
+	disambiguateQueueNames(queues)
 	return queues
+}
+
+func disambiguateQueueNames(queues []model.Queue) {
+	used := make(map[string]int, len(queues))
+	for i := range queues {
+		name := queues[i].Name
+		if used[name] == 0 {
+			used[name] = 1
+			continue
+		}
+		// Keep configured/explicit names untouched if possible; suffix later collisions.
+		n := used[name] + 1
+		candidate := fmt.Sprintf("%s-%d", name, n)
+		for used[candidate] > 0 {
+			n++
+			candidate = fmt.Sprintf("%s-%d", name, n)
+		}
+		used[name] = n
+		used[candidate] = 1
+		queues[i].Name = candidate
+	}
+}
+
+func canonicalSocketPath(path string) string {
+	clean := filepath.Clean(path)
+	if abs, err := filepath.Abs(clean); err == nil {
+		clean = abs
+	}
+	if resolved, err := filepath.EvalSymlinks(clean); err == nil {
+		return filepath.Clean(resolved)
+	}
+	return clean
 }
 
 func socketPathExists(path string) bool {
@@ -105,14 +158,19 @@ func socketPathExists(path string) bool {
 	return err == nil && st.Mode()&os.ModeSocket != 0
 }
 
-func activeUnixListeners() map[string]struct{} {
-	result := make(map[string]struct{})
+func activeUnixListeners() map[string]string {
 	f, err := os.Open("/proc/net/unix")
 	if err != nil {
-		return result
+		return make(map[string]string)
 	}
 	defer f.Close()
-	s := bufio.NewScanner(f)
+	return parseProcNetUnix(f)
+}
+
+func parseProcNetUnix(r io.Reader) map[string]string {
+	result := make(map[string]string)
+	s := bufio.NewScanner(r)
+	s.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	first := true
 	for s.Scan() {
 		line := strings.TrimSpace(s.Text())
@@ -125,14 +183,23 @@ func activeUnixListeners() map[string]struct{} {
 		}
 		fields := strings.Fields(line)
 		// /proc/net/unix: Num RefCount Protocol Flags Type St Inode Path
+		// Type 0001 = SOCK_STREAM, St 01 = SS_UNCONNECTED, Flags & 0x00010000 = __SO_ACCEPTCON (listening).
 		if len(fields) < 8 || fields[4] != "0001" || fields[5] != "01" {
+			continue
+		}
+		flags, err := strconv.ParseUint(fields[3], 16, 64)
+		if err != nil || flags&0x00010000 == 0 {
 			continue
 		}
 		path := strings.TrimSpace(strings.Join(fields[7:], " "))
 		if path == "" || strings.HasPrefix(path, "@") {
 			continue
 		}
-		result[filepath.Clean(path)] = struct{}{}
+		clean := filepath.Clean(path)
+		key := canonicalSocketPath(clean)
+		if _, exists := result[key]; !exists {
+			result[key] = clean
+		}
 	}
 	return result
 }
@@ -150,7 +217,9 @@ func queueNameFromPath(path string) string {
 	base = strings.TrimPrefix(base, "ts_")
 	base = strings.TrimPrefix(base, "socket-")
 	if base == "" {
-		return fmt.Sprintf("queue-%x", len(path))
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(path))
+		return fmt.Sprintf("queue-%08x", h.Sum32())
 	}
 	return base
 }

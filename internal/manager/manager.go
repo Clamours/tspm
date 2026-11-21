@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -20,12 +21,10 @@ type Manager struct {
 	cfg     config.Config
 	cfgPath string
 	queues  []model.Queue
-	lastErr error
-	binary  string
 }
 
 func New(cfg config.Config, cfgPath string) *Manager {
-	return &Manager{cfg: cfg, cfgPath: cfgPath, binary: cfg.TSPBin}
+	return &Manager{cfg: cfg, cfgPath: cfgPath}
 }
 
 func (m *Manager) ConfigPath() string { return m.cfgPath }
@@ -49,11 +48,33 @@ func (m *Manager) Snapshot() []model.Queue {
 	return out
 }
 
-func (m *Manager) Refresh(ctx context.Context) error {
-	m.mu.RLock()
-	cfg := m.cfg
-	m.mu.RUnlock()
+// DiscoverOnly refreshes the list of discovered/configured queues without
+// invoking `tsp -l` or `tsp -S` on every queue.
+func (m *Manager) DiscoverOnly() {
+	cfg := m.Config()
 	queues := discovery.Discover(cfg)
+	m.mu.Lock()
+	m.queues = queues
+	m.mu.Unlock()
+}
+
+func (m *Manager) Refresh(ctx context.Context) error {
+	cfg := m.Config()
+	queues := discovery.Discover(cfg)
+
+	_, binErr := exec.LookPath(cfg.TSPBin)
+	if binErr != nil {
+		for i := range queues {
+			if queues[i].Active {
+				queues[i].Active = false
+				queues[i].Error = fmt.Sprintf("cannot find %q in PATH", cfg.TSPBin)
+			}
+		}
+		m.mu.Lock()
+		m.queues = queues
+		m.mu.Unlock()
+		return fmt.Errorf("cannot find %q in PATH: %w", cfg.TSPBin, binErr)
+	}
 
 	var wg sync.WaitGroup
 	for i := range queues {
@@ -81,8 +102,6 @@ func (m *Manager) Refresh(ctx context.Context) error {
 			slots, err := client.Slots(callCtx)
 			if err == nil {
 				q.Slots = slots
-			} else {
-				q.Slots = 1
 			}
 			q.UpdatedAt = time.Now()
 		}(i)
@@ -94,18 +113,28 @@ func (m *Manager) Refresh(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) queueClient(name string) (spooler.Client, error) {
+// queueClient resolves a queue by exact socket path first, then by queue name.
+func (m *Manager) queueClient(selector string) (spooler.Client, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	cleanSelector := filepath.Clean(selector)
 	for _, q := range m.queues {
-		if q.Name == name {
+		if q.Socket == selector || q.Socket == cleanSelector {
 			if !q.Active {
-				return spooler.Client{}, fmt.Errorf("queue %q is not active: %s", name, q.Error)
+				return spooler.Client{}, fmt.Errorf("queue %q is not active: %s", q.Name, q.Error)
 			}
 			return spooler.Client{Binary: m.cfg.TSPBin, Socket: q.Socket}, nil
 		}
 	}
-	return spooler.Client{}, fmt.Errorf("queue %q not found", name)
+	for _, q := range m.queues {
+		if q.Name == selector {
+			if !q.Active {
+				return spooler.Client{}, fmt.Errorf("queue %q is not active: %s", q.Name, q.Error)
+			}
+			return spooler.Client{Binary: m.cfg.TSPBin, Socket: q.Socket}, nil
+		}
+	}
+	return spooler.Client{}, fmt.Errorf("queue %q not found", selector)
 }
 
 func (m *Manager) AddQueue(name, socket string) error {
@@ -113,108 +142,131 @@ func (m *Manager) AddQueue(name, socket string) error {
 	if name == "" || socket == "" {
 		return errors.New("queue name and socket path are required")
 	}
+	socket = filepath.Clean(socket)
+	if socket == "." {
+		return errors.New("invalid socket path")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, q := range m.cfg.Queues {
 		if q.Name == name {
 			return fmt.Errorf("queue name %q already exists", name)
 		}
-		if q.Socket == socket {
+		if filepath.Clean(q.Socket) == socket {
 			return fmt.Errorf("socket %q is already registered", socket)
 		}
 	}
-	m.cfg.Queues = append(m.cfg.Queues, config.Queue{Name: name, Socket: socket})
-	if err := config.Save(m.cfgPath, m.cfg); err != nil {
-		m.cfg.Queues = m.cfg.Queues[:len(m.cfg.Queues)-1]
+	next := append(append([]config.Queue(nil), m.cfg.Queues...), config.Queue{Name: name, Socket: socket})
+	cfgCopy := m.cfg
+	cfgCopy.Queues = next
+	if err := config.Save(m.cfgPath, cfgCopy); err != nil {
 		return err
 	}
+	m.cfg.Queues = next
 	return nil
 }
 
-func (m *Manager) RemoveQueue(name string) error {
+func (m *Manager) RemoveQueue(selector string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	cleanSelector := filepath.Clean(selector)
+	idx := -1
 	for i, q := range m.cfg.Queues {
-		if q.Name == name {
-			previous := append([]config.Queue(nil), m.cfg.Queues...)
-			m.cfg.Queues = append(m.cfg.Queues[:i], m.cfg.Queues[i+1:]...)
-			if err := config.Save(m.cfgPath, m.cfg); err != nil {
-				m.cfg.Queues = previous
-				return err
-			}
-			return nil
+		if q.Socket == selector || filepath.Clean(q.Socket) == cleanSelector {
+			idx = i
+			break
 		}
 	}
-	return fmt.Errorf("queue %q is not explicitly registered; auto-discovered queues cannot be removed from config", name)
+	if idx < 0 {
+		for i, q := range m.cfg.Queues {
+			if q.Name == selector {
+				idx = i
+				break
+			}
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("queue %q is not explicitly registered; auto-discovered queues cannot be removed from config", selector)
+	}
+	next := make([]config.Queue, 0, len(m.cfg.Queues)-1)
+	next = append(next, m.cfg.Queues[:idx]...)
+	next = append(next, m.cfg.Queues[idx+1:]...)
+	cfgCopy := m.cfg
+	cfgCopy.Queues = next
+	if err := config.Save(m.cfgPath, cfgCopy); err != nil {
+		return err
+	}
+	m.cfg.Queues = next
+	return nil
 }
 
-func (m *Manager) SubmitShell(ctx context.Context, queueName, command string) (int, error) {
-	c, err := m.queueClient(queueName)
+func (m *Manager) SubmitShell(ctx context.Context, queueSelector, command string) (int, error) {
+	c, err := m.queueClient(queueSelector)
 	if err != nil {
 		return -1, err
 	}
 	return c.SubmitShell(ctx, command)
 }
 
-func (m *Manager) SubmitArgs(ctx context.Context, queueName string, args []string) (int, error) {
-	c, err := m.queueClient(queueName)
+func (m *Manager) SubmitArgs(ctx context.Context, queueSelector string, args []string) (int, error) {
+	c, err := m.queueClient(queueSelector)
 	if err != nil {
 		return -1, err
 	}
 	return c.SubmitArgs(ctx, args)
 }
 
-func (m *Manager) Kill(ctx context.Context, queueName string, id int) error {
-	c, err := m.queueClient(queueName)
+func (m *Manager) Kill(ctx context.Context, queueSelector string, id int) error {
+	c, err := m.queueClient(queueSelector)
 	if err != nil {
 		return err
 	}
 	return c.Kill(ctx, id)
 }
-func (m *Manager) Remove(ctx context.Context, queueName string, id int) error {
-	c, err := m.queueClient(queueName)
+func (m *Manager) Remove(ctx context.Context, queueSelector string, id int) error {
+	c, err := m.queueClient(queueSelector)
 	if err != nil {
 		return err
 	}
 	return c.Remove(ctx, id)
 }
-func (m *Manager) ClearFinished(ctx context.Context, queueName string) error {
-	c, err := m.queueClient(queueName)
+func (m *Manager) ClearFinished(ctx context.Context, queueSelector string) error {
+	c, err := m.queueClient(queueSelector)
 	if err != nil {
 		return err
 	}
 	return c.ClearFinished(ctx)
 }
-func (m *Manager) Urgent(ctx context.Context, queueName string, id int) error {
-	c, err := m.queueClient(queueName)
+func (m *Manager) Urgent(ctx context.Context, queueSelector string, id int) error {
+	c, err := m.queueClient(queueSelector)
 	if err != nil {
 		return err
 	}
 	return c.Urgent(ctx, id)
 }
-func (m *Manager) SetSlots(ctx context.Context, queueName string, n int) error {
-	c, err := m.queueClient(queueName)
+func (m *Manager) SetSlots(ctx context.Context, queueSelector string, n int) error {
+	c, err := m.queueClient(queueSelector)
 	if err != nil {
 		return err
 	}
 	return c.SetSlots(ctx, n)
 }
-func (m *Manager) Info(ctx context.Context, queueName string, id int) (string, error) {
-	c, err := m.queueClient(queueName)
+func (m *Manager) Info(ctx context.Context, queueSelector string, id int) (string, error) {
+	c, err := m.queueClient(queueSelector)
 	if err != nil {
 		return "", err
 	}
 	return c.Info(ctx, id)
 }
-func (m *Manager) OutputPath(ctx context.Context, queueName string, id int) (string, error) {
-	c, err := m.queueClient(queueName)
+func (m *Manager) OutputPath(ctx context.Context, queueSelector string, id int) (string, error) {
+	c, err := m.queueClient(queueSelector)
 	if err != nil {
 		return "", err
 	}
 	return c.OutputPath(ctx, id)
 }
-func (m *Manager) TaskOutput(ctx context.Context, queueName string, id int) (string, error) {
-	c, err := m.queueClient(queueName)
+func (m *Manager) TaskOutput(ctx context.Context, queueSelector string, id int) (string, error) {
+	c, err := m.queueClient(queueSelector)
 	if err != nil {
 		return "", err
 	}

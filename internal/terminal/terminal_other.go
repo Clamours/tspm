@@ -3,36 +3,27 @@
 package terminal
 
 import (
-	"errors"
 	"os"
+
+	"github.com/mattn/go-isatty"
 )
 
-type State struct{}
-type Size struct{ Width, Height int }
-type Key struct {
-	Name string
-	Rune rune
+type Size struct {
+	Width  int
+	Height int
 }
 
-func EnterRaw() (*State, error) {
-	return nil, errors.New("interactive TUI currently supports Linux only")
+type Key struct {
+	Name  string
+	Rune  rune
+	Runes []rune
 }
-func (s *State) Restore() error { return nil }
-func GetSize() Size             { return Size{Width: 100, Height: 30} }
-func ReadKey() (Key, error) {
-	var b [1]byte
-	n, err := os.Stdin.Read(b[:])
-	if err != nil {
-		return Key{}, err
-	}
-	if n == 0 {
-		return Key{Name: "timeout"}, nil
-	}
-	return Key{Name: "rune", Rune: rune(b[0])}, nil
+
+func GetSize() Size {
+	return Size{Width: 100, Height: 30}
 }
+
 func IsTerminal() bool {
-	fi, err := os.Stdin.Stat()
-	return err == nil && (fi.Mode()&os.ModeCharDevice) != 0
+	fd := os.Stdin.Fd()
+	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
 }
-func EnterScreen() {}
-func LeaveScreen() {}

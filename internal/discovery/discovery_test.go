@@ -1,6 +1,11 @@
 package discovery
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/tspm-project/tsp-manager/internal/model"
+)
 
 func TestKnownSocketName(t *testing.T) {
 	matches := []string{
@@ -55,5 +60,42 @@ func TestQueueNameFromPath(t *testing.T) {
 		if got := queueNameFromPath(path); got != want {
 			t.Errorf("queueNameFromPath(%q) = %q, want %q", path, got, want)
 		}
+	}
+
+	a := queueNameFromPath("/tmp/tsp-.sock")
+	b := queueNameFromPath("/var/tsp-.sock")
+	if a == b || !strings.HasPrefix(a, "queue-") {
+		t.Errorf("expected distinct hashed fallback names, got %q and %q", a, b)
+	}
+}
+
+func TestParseProcNetUnixRequiresListeningFlag(t *testing.T) {
+	sample := strings.Join([]string{
+		"Num       RefCount Protocol Flags    Type St Inode Path",
+		"0000000000000001: 00000002 00000000 00010000 0001 01 12345 /tmp/tsp-listening.sock",
+		"0000000000000002: 00000002 00000000 00000000 0001 01 12346 /tmp/tsp-not-listening.sock",
+		"0000000000000003: 00000002 00000000 00010000 0002 01 12347 /tmp/tsp-dgram.sock",
+		"0000000000000004: 00000002 00000000 00010000 0001 03 12348 /tmp/tsp-connected.sock",
+		"0000000000000005: 00000002 00000000 00010000 0001 01 12349 @abstract-tsp",
+	}, "\n")
+
+	got := parseProcNetUnix(strings.NewReader(sample))
+	if len(got) != 1 {
+		t.Fatalf("expected 1 active listener, got %d: %#v", len(got), got)
+	}
+	if _, ok := got[canonicalSocketPath("/tmp/tsp-listening.sock")]; !ok {
+		t.Fatalf("expected listening socket in %#v", got)
+	}
+}
+
+func TestDisambiguateQueueNames(t *testing.T) {
+	queues := []model.Queue{
+		{Name: "gpu0", Socket: "/tmp/tsp-gpu0.sock"},
+		{Name: "gpu0", Socket: "/var/tmp/ts-gpu0"},
+		{Name: "gpu0", Socket: "/run/tsp-gpu0.sock"},
+	}
+	disambiguateQueueNames(queues)
+	if queues[0].Name != "gpu0" || queues[1].Name != "gpu0-2" || queues[2].Name != "gpu0-3" {
+		t.Fatalf("unexpected disambiguated names: %#v", queues)
 	}
 }
